@@ -74,3 +74,35 @@ def test_dequeue_empty_returns_none() -> None:
     queue = QueueSolutionEntrypoint()
     result = queue.dequeue()
     assert result is None
+
+
+def test_deduplication() -> None:
+    """Round 2 Example: Duplicate (user_id, provider) pairs are deduplicated."""
+    run_queue([
+        # 1. Enqueue: user_id=1, provider="bank_statements", timestamp='2025-10-20 12:00:00' -> 1
+        call_enqueue("bank_statements", 1, "2025-10-20 12:00:00").expect(1),
+        # 2. Enqueue: user_id=1, provider="bank_statements", timestamp='2025-10-20 12:05:00' -> 1 (duplicate!)
+        call_enqueue("bank_statements", 1, "2025-10-20 12:05:00").expect(1),
+        # 3. Enqueue: user_id=1, provider="id_verification", timestamp='2025-10-20 12:05:00' -> 2
+        call_enqueue("id_verification", 1, "2025-10-20 12:05:00").expect(2),
+        # 4. Dequeue -> {"user_id": 1, "provider": "bank_statements"}
+        call_dequeue().expect("bank_statements", 1),
+        # 5. Dequeue -> {"user_id": 1, "provider": "id_verification"}
+        call_dequeue().expect("id_verification", 1),
+    ])
+
+
+def test_deduplication_keeps_earlier_timestamp() -> None:
+    """When duplicate is enqueued with earlier timestamp, it replaces the existing one."""
+    run_queue([
+        # Enqueue with later timestamp first
+        call_enqueue("bank_statements", 1, "2025-10-20 12:10:00").expect(1),
+        # Enqueue same pair with earlier timestamp - should replace
+        call_enqueue("bank_statements", 1, "2025-10-20 12:00:00").expect(1),
+        # Enqueue different user
+        call_enqueue("bank_statements", 2, "2025-10-20 12:05:00").expect(2),
+        # User 1's task now has earlier timestamp, should come first
+        call_dequeue().expect("bank_statements", 1),
+        call_dequeue().expect("bank_statements", 2),
+    ])
+
