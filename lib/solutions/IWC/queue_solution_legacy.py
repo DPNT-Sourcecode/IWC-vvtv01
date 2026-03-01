@@ -51,6 +51,7 @@ REGISTERED_PROVIDERS: list[Provider] = [
 class Queue:
     def __init__(self):
         self._queue = []
+        self._enqueue_counter = 0  # For FIFO tie-breaking
 
     def _collect_dependencies(self, task: TaskSubmission) -> list[TaskSubmission]:
         provider = next((p for p in REGISTERED_PROVIDERS if p.name == task.provider), None)
@@ -104,8 +105,12 @@ class Queue:
             existing_ts = self._timestamp_for_task(existing)
             new_ts = self._timestamp_for_task(task)
             if new_ts < existing_ts:
+                # Preserve enqueue_order from existing task
+                task.metadata["enqueue_order"] = existing.metadata.get("enqueue_order", self._enqueue_counter)
                 self._queue[dup_idx] = task
         else:
+            task.metadata["enqueue_order"] = self._enqueue_counter
+            self._enqueue_counter += 1
             self._queue.append(task)
 
     def enqueue(self, item: TaskSubmission) -> int:
@@ -271,4 +276,5 @@ async def queue_worker():
         logger.info(f"Finished task: {task}")
 ```
 """
+
 
