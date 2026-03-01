@@ -99,38 +99,28 @@ def test_deduplication_keeps_earlier_timestamp() -> None:
 
 
 def test_bank_statements_deprioritized() -> None:
-    """Round 3 Example: bank_statements goes to end of queue."""
     run_queue([
-        # 1. Enqueue: user_id=1, provider="bank_statements", timestamp='2025-10-20 12:00:00' -> 1
         call_enqueue("bank_statements", 1, "2025-10-20 12:00:00").expect(1),
-        # 2. Enqueue: user_id=1, provider="id_verification", timestamp='2025-10-20 12:01:00' -> 2
         call_enqueue("id_verification", 1, "2025-10-20 12:01:00").expect(2),
-        # 3. Enqueue: user_id=2, provider="companies_house", timestamp='2025-10-20 12:02:00' -> 3
         call_enqueue("companies_house", 2, "2025-10-20 12:02:00").expect(3),
-        # 4. Dequeue -> {"user_id": 1, "provider": "id_verification"}
         call_dequeue().expect("id_verification", 1),
-        # 5. Dequeue -> {"user_id": 2, "provider": "companies_house"}
         call_dequeue().expect("companies_house", 2),
-        # 6. Dequeue -> {"user_id": 1, "provider": "bank_statements"}
         call_dequeue().expect("bank_statements", 1),
     ])
 
 
 def test_bank_statements_last_with_rule_of_3() -> None:
-    """When Rule of 3 applies, bank_statements is still last among user's tasks."""
     run_queue([
-        # User 1 has 3 tasks - Rule of 3 applies
         call_enqueue("bank_statements", 1, "2025-10-20 12:00:00").expect(1),
         call_enqueue("id_verification", 1, "2025-10-20 12:01:00").expect(2),
         call_enqueue("companies_house", 1, "2025-10-20 12:02:00").expect(3),
-        # User 2 has 1 task
         call_enqueue("id_verification", 2, "2025-10-20 12:00:00").expect(4),
-        # User 1's tasks are HIGH priority, but bank_statements is last
         call_dequeue().expect("id_verification", 1),
         call_dequeue().expect("companies_house", 1),
         call_dequeue().expect("bank_statements", 1),
         call_dequeue().expect("id_verification", 2),
     ])
+
 
 
 
