@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
+from functools import cmp_to_key
 
 # LEGACY CODE ASSET
 # RESOLVED on deploy
 from solutions.IWC.task_types import TaskSubmission, TaskDispatch
+
+TIME_SENSITIVE_THRESHOLD_SECONDS = 300  # 5 minutes
 
 class Priority(IntEnum):
     """Represents the queue ordering tiers observed in the legacy system."""
@@ -127,6 +130,17 @@ class Queue:
         if self.size == 0:
             return None
 
+        # Calculate newest timestamp for time-sensitive check
+        timestamps = [self._timestamp_for_task(task) for task in self._queue]
+        newest_ts = max(timestamps)
+
+        def is_time_sensitive_bank(task):
+            if task.provider != "bank_statements":
+                return False
+            task_ts = self._timestamp_for_task(task)
+            internal_age = (newest_ts - task_ts).total_seconds()
+            return internal_age >= TIME_SENSITIVE_THRESHOLD_SECONDS
+
         user_ids = {task.user_id for task in self._queue}
         task_count = {}
         priority_timestamps = {}
@@ -161,14 +175,60 @@ class Queue:
                 metadata["group_earliest_timestamp"] = current_earliest
                 metadata["priority"] = priority_level
 
-        self._queue.sort(
-            key=lambda i: (
-                self._priority_for_task(i),
-                self._earliest_group_timestamp_for_task(i),
-                1 if i.provider == "bank_statements" else 0,
-                self._timestamp_for_task(i),
+        def compare_tasks(a, b):
+            a_ts = self._timestamp_for_task(a)
+            b_ts = self._timestamp_for_task(b)
+            a_ts_bank = is_time_sensitive_bank(a)
+            b_ts_bank = is_time_sensitive_bank(b)
+            a_order = a.metadata.get("enqueue_order", 0)
+            b_order = b.metadata.get("enqueue_order", 0)
+
+            # Case 1: Both time-sensitive bank_statements
+            if a_ts_bank and b_ts_bank:
+                if a_ts != b_ts:
+                    return -1 if a_ts < b_ts else 1
+                return a_order - b_order  # FIFO
+
+            # Case 2: A is time-sensitive, B is not
+            if a_ts_bank:
+                if a_ts < b_ts:
+                    return -1  # A is older, A comes first
+                elif a_ts > b_ts:
+                    return 1  # B is older, B comes first (A cannot skip)
+                else:  # Same timestamp
+                    return -1  # A can skip (time-sensitive advantage)
+
+            # Case 3: B is time-sensitive, A is not
+            if b_ts_bank:
+                if b_ts < a_ts:
+                    return 1  # B is older, B comes first
+                elif b_ts > a_ts:
+                    return -1  # A is older, A comes first (B cannot skip A)
+                else:  # Same timestamp
+                    return 1  # B can skip (time-sensitive advantage)
+
+            # Case 4: Neither is time-sensitive - normal priority rules
+            a_key = (
+                self._priority_for_task(a),
+                self._earliest_group_timestamp_for_task(a),
+                1 if a.provider == "bank_statements" else 0,
+                a_ts,
+                a_order,
             )
-        )
+            b_key = (
+                self._priority_for_task(b),
+                self._earliest_group_timestamp_for_task(b),
+                1 if b.provider == "bank_statements" else 0,
+                b_ts,
+                b_order,
+            )
+            if a_key < b_key:
+                return -1
+            elif a_key > b_key:
+                return 1
+            return 0
+
+        self._queue.sort(key=cmp_to_key(compare_tasks))
 
         task = self._queue.pop(0)
         return TaskDispatch(
@@ -276,5 +336,6 @@ async def queue_worker():
         logger.info(f"Finished task: {task}")
 ```
 """
+
 
 
