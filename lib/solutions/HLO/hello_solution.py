@@ -3,4 +3,5 @@ class HelloSolution:
     
     # friend_name = unicode string
     def hello(self, friend_name):
-        return "oHello, World!"
+        return "Hello, World!"
+    
