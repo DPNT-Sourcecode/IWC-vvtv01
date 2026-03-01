@@ -10,6 +10,7 @@ class Priority(IntEnum):
     """Represents the queue ordering tiers observed in the legacy system."""
     HIGH = 1
     NORMAL = 2
+    LOW = 3
 
 @dataclass
 class Provider:
@@ -139,13 +140,18 @@ class Queue:
             except (TypeError, ValueError):
                 priority_level = None
 
-            if priority_level is None or priority_level == Priority.NORMAL:
+            is_bank_statements = task.provider == "bank_statements"
+
+            if priority_level is None or priority_level == Priority.NORMAL or priority_level == Priority.LOW:
                 metadata["group_earliest_timestamp"] = MAX_TIMESTAMP
                 if task_count[task.user_id] >= 3:
                     metadata["group_earliest_timestamp"] = priority_timestamps[task.user_id]
                     metadata["priority"] = Priority.HIGH
                 else:
-                    metadata["priority"] = Priority.NORMAL
+                    if is_bank_statements:
+                        metadata["priority"] = Priority.LOW
+                    else:
+                        metadata["priority"] = Priority.NORMAL
             else:
                 metadata["group_earliest_timestamp"] = current_earliest
                 metadata["priority"] = priority_level
@@ -154,6 +160,7 @@ class Queue:
             key=lambda i: (
                 self._priority_for_task(i),
                 self._earliest_group_timestamp_for_task(i),
+                1 if i.provider == "bank_statements" else 0,
                 self._timestamp_for_task(i),
             )
         )
@@ -259,5 +266,6 @@ async def queue_worker():
         logger.info(f"Finished task: {task}")
 ```
 """
+
 
 
