@@ -70,6 +70,24 @@ def test_age_returns_integer() -> None:
     assert isinstance(age, int)
 
 
+def test_age_returns_zero_when_empty() -> None:
+    queue = QueueSolutionEntrypoint()
+    assert queue.age() == 0
+
+
+def test_age_returns_time_gap_in_seconds() -> None:
+    queue = QueueSolutionEntrypoint()
+    queue.enqueue(TaskSubmission(provider="id_verification", user_id=1, timestamp="2025-10-20 12:00:00"))
+    queue.enqueue(TaskSubmission(provider="id_verification", user_id=2, timestamp="2025-10-20 12:05:00"))
+    assert queue.age() == 300
+
+
+def test_age_with_single_task() -> None:
+    queue = QueueSolutionEntrypoint()
+    queue.enqueue(TaskSubmission(provider="id_verification", user_id=1, timestamp="2025-10-20 12:00:00"))
+    assert queue.age() == 0
+
+
 def test_dequeue_empty_returns_none() -> None:
     queue = QueueSolutionEntrypoint()
     result = queue.dequeue()
@@ -81,7 +99,6 @@ def test_deduplication() -> None:
         call_enqueue("bank_statements", 1, "2025-10-20 12:00:00").expect(1),
         call_enqueue("bank_statements", 1, "2025-10-20 12:05:00").expect(1),
         call_enqueue("id_verification", 1, "2025-10-20 12:05:00").expect(2),
-        # id_verification comes first because bank_statements is deprioritized
         call_dequeue().expect("id_verification", 1),
         call_dequeue().expect("bank_statements", 1),
     ])
@@ -92,7 +109,6 @@ def test_deduplication_keeps_earlier_timestamp() -> None:
         call_enqueue("bank_statements", 1, "2025-10-20 12:10:00").expect(1),
         call_enqueue("bank_statements", 1, "2025-10-20 12:00:00").expect(1),
         call_enqueue("bank_statements", 2, "2025-10-20 12:05:00").expect(2),
-        # Both are LOW priority bank_statements, sorted by timestamp
         call_dequeue().expect("bank_statements", 1),
         call_dequeue().expect("bank_statements", 2),
     ])
@@ -120,3 +136,4 @@ def test_bank_statements_last_with_rule_of_3() -> None:
         call_dequeue().expect("bank_statements", 1),
         call_dequeue().expect("id_verification", 2),
     ])
+
