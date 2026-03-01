@@ -120,7 +120,3 @@ def test_bank_statements_last_with_rule_of_3() -> None:
         call_dequeue().expect("bank_statements", 1),
         call_dequeue().expect("id_verification", 2),
     ])
-
-
-
-
