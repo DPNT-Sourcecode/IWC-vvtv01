@@ -91,11 +91,21 @@ class Queue:
         return timestamp
 
     def _find_duplicate_index(self, task: TaskSubmission) -> int | None:
-        """Find index of existing task with same (user_id, provider) pair."""
         for idx, existing in enumerate(self._queue):
             if existing.user_id == task.user_id and existing.provider == task.provider:
                 return idx
         return None
+
+    def _handle_deduplication(self, task: TaskSubmission) -> None:
+        dup_idx = self._find_duplicate_index(task)
+        if dup_idx is not None:
+            existing = self._queue[dup_idx]
+            existing_ts = self._timestamp_for_task(existing)
+            new_ts = self._timestamp_for_task(task)
+            if new_ts < existing_ts:
+                self._queue[dup_idx] = task
+        else:
+            self._queue.append(task)
 
     def enqueue(self, item: TaskSubmission) -> int:
         tasks = [*self._collect_dependencies(item), item]
@@ -104,20 +114,7 @@ class Queue:
             metadata = task.metadata
             metadata.setdefault("priority", Priority.NORMAL)
             metadata.setdefault("group_earliest_timestamp", MAX_TIMESTAMP)
-            
-            # Check for duplicate (user_id, provider) pair
-            dup_idx = self._find_duplicate_index(task)
-            if dup_idx is not None:
-                existing = self._queue[dup_idx]
-                # Keep the one with earlier timestamp (Timestamp Ordering rule)
-                existing_ts = self._timestamp_for_task(existing)
-                new_ts = self._timestamp_for_task(task)
-                if new_ts < existing_ts:
-                    # New task has earlier timestamp, replace existing
-                    self._queue[dup_idx] = task
-                # Otherwise keep existing (it has earlier or equal timestamp)
-            else:
-                self._queue.append(task)
+            self._handle_deduplication(task)
         return self.size
 
     def dequeue(self):
@@ -262,4 +259,5 @@ async def queue_worker():
         logger.info(f"Finished task: {task}")
 ```
 """
+
 
